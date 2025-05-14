@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"sync"
+	"time"
 
 	"github.com/iwanbk/postgres-mcp-go/internal/db"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -17,6 +20,10 @@ const schemaPath = "schema"
 type PostgresMCPServer struct {
 	db     *db.DB
 	server *server.MCPServer
+	// SSE related fields
+	httpServer    *http.Server
+	sseClients    map[string]chan string
+	sseClientsMux sync.Mutex
 }
 
 // New creates a new PostgreSQL MCP server
@@ -34,8 +41,9 @@ func New(databaseURL string) (*PostgresMCPServer, error) {
 	)
 
 	return &PostgresMCPServer{
-		db:     db,
-		server: s,
+		db:         db,
+		server:     s,
+		sseClients: make(map[string]chan string),
 	}, nil
 }
 
@@ -129,7 +137,142 @@ func (s *PostgresMCPServer) Serve() error {
 	return server.ServeStdio(s.server)
 }
 
+// ServeHTTP starts the MCP server with HTTP and SSE support
+func (s *PostgresMCPServer) ServeHTTP(addr string) error {
+	mux := http.NewServeMux()
+
+	// SSE endpoint for real-time updates
+	mux.HandleFunc("/sse", s.handleSSE)
+
+	// MCP HTTP endpoint
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		// Handle MCP requests over HTTP
+		if r.Method == http.MethodPost {
+			var request map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, fmt.Sprintf("Error decoding request: %v", err), http.StatusBadRequest)
+				return
+			}
+
+			// Convert request to JSON
+			requestJSON, err := json.Marshal(request)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Error marshaling request: %v", err), http.StatusInternalServerError)
+				return
+			}
+
+			// Process the MCP request
+			response := s.server.HandleMessage(context.Background(), requestJSON)
+
+			// Send the response
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(response)
+
+			// Broadcast the response to SSE clients
+			responseJSON, _ := json.Marshal(response)
+			s.broadcastSSE(string(responseJSON))
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Health check endpoint
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "PostgreSQL MCP Server is running")
+	})
+
+	s.httpServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	fmt.Printf("Starting HTTP server on %s\n", addr)
+	return s.httpServer.ListenAndServe()
+}
+
+// handleSSE handles Server-Sent Events connections
+func (s *PostgresMCPServer) handleSSE(w http.ResponseWriter, r *http.Request) {
+	// Set headers for SSE
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Create a unique client ID
+	clientID := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	// Create a channel for this client
+	messageChan := make(chan string)
+
+	// Register the client
+	s.sseClientsMux.Lock()
+	s.sseClients[clientID] = messageChan
+	s.sseClientsMux.Unlock()
+
+	// Remove the client when the connection is closed
+	defer func() {
+		s.sseClientsMux.Lock()
+		delete(s.sseClients, clientID)
+		close(messageChan)
+		s.sseClientsMux.Unlock()
+	}()
+
+	// Send initial connection message
+	fmt.Fprintf(w, "data: %s\n\n", "{\"event\":\"connected\",\"clientId\":\""+clientID+"\"}")
+	w.(http.Flusher).Flush()
+
+	// Keep the connection open
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			// Client closed the connection
+			return
+		case msg := <-messageChan:
+			// Send the message to the client
+			fmt.Fprintf(w, "data: %s\n\n", msg)
+			w.(http.Flusher).Flush()
+		case <-time.After(30 * time.Second):
+			// Send a keep-alive ping every 30 seconds
+			fmt.Fprintf(w, ":\n\n") // Comment line as keep-alive
+			w.(http.Flusher).Flush()
+		}
+	}
+}
+
+// broadcastSSE sends a message to all connected SSE clients
+func (s *PostgresMCPServer) broadcastSSE(message string) {
+	s.sseClientsMux.Lock()
+	defer s.sseClientsMux.Unlock()
+
+	for _, clientChan := range s.sseClients {
+		// Non-blocking send
+		select {
+		case clientChan <- message:
+		default:
+			// Skip clients with full buffers
+		}
+	}
+}
+
 // Close closes the server and database connection
 func (s *PostgresMCPServer) Close() error {
+	// Close the HTTP server if it exists
+	if s.httpServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.httpServer.Shutdown(ctx)
+	}
+
+	// Close all SSE client channels
+	s.sseClientsMux.Lock()
+	for id, ch := range s.sseClients {
+		close(ch)
+		delete(s.sseClients, id)
+	}
+	s.sseClientsMux.Unlock()
+
+	// Close the database connection
 	return s.db.Close()
 }

@@ -33,11 +33,31 @@ Run the server by providing a PostgreSQL connection URL using the `-database_url
 postgres-mcp -database_url=postgresql://username:password@localhost/mydb
 ```
 
+To disable SSL (useful for local development):
+
+```bash
+postgres-mcp -database_url="postgresql://username:password@localhost/mydb?sslmode=disable"
+```
+
 You can also view available options with the help flag:
 
 ```bash
 postgres-mcp -help
 ```
+
+### HTTP Server with SSE Support
+
+You can enable an HTTP server with Server-Sent Events (SSE) support by using the `-sse_addr` flag:
+
+```bash
+postgres-mcp -database_url="postgresql://username:password@localhost/mydb" -sse_addr=":8000"
+```
+
+This will start both the standard stdio MCP server and an HTTP server with the following endpoints:
+
+- `/sse` - Server-Sent Events endpoint for real-time updates
+- `/mcp` - HTTP endpoint for MCP protocol requests
+- `/health` - Health check endpoint
 
 ### Resources
 
