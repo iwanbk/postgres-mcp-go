@@ -1,5 +1,7 @@
 # PostgreSQL MCP Server in Go
 
+[![Go CI](https://github.com/iwanbk/postgres-mcp-go/actions/workflows/go.yml/badge.svg)](https://github.com/iwanbk/postgres-mcp-go/actions/workflows/go.yml)
+
 A Go implementation of a Model Context Protocol (MCP) server for PostgreSQL. This server enables LLMs to inspect database schemas and execute read-only queries against PostgreSQL databases.
 
 ## Features
@@ -25,10 +27,16 @@ go build -o postgres-mcp ./cmd/postgres-mcp
 
 ## Usage
 
-Run the server by providing a PostgreSQL connection URL:
+Run the server by providing a PostgreSQL connection URL using the `-database_url` flag:
 
 ```bash
-postgres-mcp postgresql://username:password@localhost/mydb
+postgres-mcp -database_url=postgresql://username:password@localhost/mydb
+```
+
+You can also view available options with the help flag:
+
+```bash
+postgres-mcp -help
 ```
 
 ### Resources
