@@ -1,0 +1,30 @@
+# golangci-lint configuration
+run:
+  # Timeout for analysis, e.g. 30s, 5m
+  timeout: 5m
+  # Include test files or not
+  tests: true
+
+# Output configuration options
+
+# All available linters:
+linters:
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - typecheck
+    - unused
+    - gosimple
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+  disable:
+    - errcheck
+
+issues:
+  # Maximum issues count per one linter
+  max-issues-per-linter: 50
+  # Maximum count of issues with the same text
+  max-same-issues: 3
