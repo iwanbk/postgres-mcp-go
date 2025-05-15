@@ -35,7 +35,7 @@ func main() {
 	defer db.Close()
 
 	listTablesTool := mcp.NewTool(
-		"list_table",
+		"list_tables",
 		mcp.WithDescription("list_tables"),
 	)
 
@@ -61,6 +61,40 @@ func main() {
 		}
 
 		return mcp.NewToolResultText(string(schemaJSON)), nil
+	})
+
+	// Add the query tool
+	queryTool := mcp.NewTool("query",
+		mcp.WithDescription("Run a read-only SQL query"),
+		mcp.WithString("sql",
+			mcp.Required(),
+			mcp.Description("The SQL query to execute"),
+		),
+	)
+
+	// Add the tool with its handler
+	s.AddTool(queryTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		// Extract the SQL query from the request
+		sql, ok := request.Params.Arguments["sql"].(string)
+		if !ok {
+			return mcp.NewToolResultError("SQL query is required"), nil
+		}
+		log.Printf("queryTool called with SQL query: %s", sql)
+
+		// Execute the query
+		result, err := db.ExecuteReadOnlyQuery(sql)
+		if err != nil {
+			return mcp.NewToolResultErrorFromErr("Failed to execute query", err), nil
+		}
+
+		// Convert the result to JSON
+		resultJSON, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return mcp.NewToolResultErrorFromErr("Failed to marshal result to JSON", err), nil
+		}
+
+		// Return the result
+		return mcp.NewToolResultText(string(resultJSON)), nil
 	})
 
 	sseServer := server.NewSSEServer(s,
