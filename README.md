@@ -14,7 +14,7 @@ A Go implementation of a Model Context Protocol (MCP) server for PostgreSQL. Thi
 ## Installation
 
 ```bash
-go install github.com/iwanbk/postgres-mcp-go/cmd/postgres-mcp@latest
+go install github.com/iwanbk/postgres-mcp-go@latest
 ```
 
 Or build from source:
@@ -22,7 +22,7 @@ Or build from source:
 ```bash
 git clone https://github.com/iwanbk/postgres-mcp-go.git
 cd postgres-mcp-go
-go build -o postgres-mcp ./cmd/postgres-mcp
+go build -v
 ```
 
 ## Usage
@@ -30,13 +30,13 @@ go build -o postgres-mcp ./cmd/postgres-mcp
 Run the server by providing a PostgreSQL connection URL using the `-database_url` flag:
 
 ```bash
-postgres-mcp -database_url=postgresql://username:password@localhost/mydb
+postgres-mcp-go -database_url=postgresql://username:password@localhost/mydb
 ```
 
 You can also view available options with the help flag:
 
 ```bash
-postgres-mcp -help
+postgres-mcp-go -help
 ```
 
 ### Resources
